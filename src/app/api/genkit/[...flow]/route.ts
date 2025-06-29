@@ -1,11 +1,9 @@
 'use server';
 
-import { createGenkitHandler } from '@genkit-ai/next';
+import { createApiHandler } from '@genkit-ai/next';
 
-// This is the entry point for all of your Genkit flows in production.
-// It's important to import all of your flows here so that they are
-// registered with Genkit.
+// Import all Genkit flows so they are registered
 import '@/ai/flows/product-recommendations';
 import '@/ai/flows/data-autofill';
 
-export const { GET, POST, OPTIONS } = createGenkitHandler();
+export const { GET, POST, OPTIONS } = createApiHandler();
