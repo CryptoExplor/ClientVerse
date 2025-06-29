@@ -1,4 +1,3 @@
-// src/ai/flows/product-recommendations.ts
 'use server';
 /**
  * @fileOverview An AI agent that analyzes client data and suggests relevant insurance and investment products.
@@ -8,8 +7,9 @@
  * - ProductRecommendationsOutput - The return type for the getProductRecommendations function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { defineFlow, definePrompt, runFlow } from '@genkit-ai/flow';
+import { googleAI } from '@genkit-ai/googleai';
+import { z } from 'zod';
 
 const ProductRecommendationsInputSchema = z.object({
   clientData: z
@@ -27,39 +27,53 @@ const ProductRecommendationsOutputSchema = z.object({
 export type ProductRecommendationsOutput = z.infer<typeof ProductRecommendationsOutputSchema>;
 
 export async function getProductRecommendations(input: ProductRecommendationsInput): Promise<ProductRecommendationsOutput> {
-  return productRecommendationsFlow(input);
+  return await runFlow(productRecommendationsFlow, input);
 }
 
-const prompt = ai.definePrompt({
-  name: 'productRecommendationsPrompt',
-  input: {schema: ProductRecommendationsInputSchema},
-  output: {schema: ProductRecommendationsOutputSchema},
-  prompt: `You are an expert financial advisor. Analyze the client data provided and suggest relevant insurance and investment products to enhance cross-selling opportunities.
+const productRecommendationsPrompt = definePrompt(
+  {
+    name: 'productRecommendationsPrompt',
+    inputSchema: ProductRecommendationsInputSchema,
+  },
+  async (input) => {
+    return `You are an expert financial advisor. Analyze the client data provided and suggest relevant insurance and investment products to enhance cross-selling opportunities.
 
-Client Data: {{{clientData}}}
+Client Data: ${input.clientData}
 
 Provide clear and concise recommendations, explaining why each product is suitable for the client.
 
-Output the insurance and investment recommendations in the specified JSON format.`,
-});
+Output the insurance and investment recommendations in the specified JSON format: {"insuranceRecommendations": ["...", "..."], "investmentRecommendations": ["...", "..."]}`;
+  }
+);
 
-const productRecommendationsFlow = ai.defineFlow(
+
+export const productRecommendationsFlow = defineFlow(
   {
     name: 'productRecommendationsFlow',
     inputSchema: ProductRecommendationsInputSchema,
     outputSchema: ProductRecommendationsOutputSchema,
   },
-  async input => {
+  async (input) => {
     try {
       // Parse the clientData string to a JSON object
       const clientData = JSON.parse(input.clientData);
-      // Add any additional data processing or validation here if needed
-
-      const {output} = await prompt({clientData: JSON.stringify(clientData)});
-      return output!;
+      
+      const llmResponse = await productRecommendationsPrompt.generate({
+        input: { clientData: JSON.stringify(clientData) },
+        model: googleAI('gemini-pro'),
+        config: {
+          output: { format: 'json' }
+        },
+      });
+      
+      const output = llmResponse.output();
+      if (typeof output === 'string') {
+        return JSON.parse(output);
+      }
+      return output;
     } catch (error) {
-      console.error('Error parsing client data:', error);
-      throw new Error('Invalid client data format.');
+      console.error('Error parsing client data or LLM response:', error);
+      throw new Error('Invalid client data format or LLM response.');
     }
   }
 );
