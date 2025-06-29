@@ -8,8 +8,9 @@
  * - AutofillDataOutput - The return type for the autofillData function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import { defineFlow, definePrompt, runFlow } from '@genkit-ai/flow';
+import { googleAI } from '@genkit-ai/googleai';
+import { z } from 'zod';
 
 const AutofillDataInputSchema = z.object({
   clientName: z.string().describe('The name of the client.'),
@@ -36,38 +37,48 @@ const AutofillDataOutputSchema = z.object({
 export type AutofillDataOutput = z.infer<typeof AutofillDataOutputSchema>;
 
 export async function autofillData(input: AutofillDataInput): Promise<AutofillDataOutput> {
-  return autofillDataFlow(input);
+  return await runFlow(autofillDataFlow, input);
 }
 
-const prompt = ai.definePrompt({
-  name: 'autofillDataPrompt',
-  input: {schema: AutofillDataInputSchema},
-  output: {schema: AutofillDataOutputSchema},
-  prompt: `You are an AI assistant that helps autofill missing client information based on available data.
+const autofillDataPrompt = definePrompt(
+  {
+    name: 'autofillDataPrompt',
+    inputSchema: AutofillDataInputSchema,
+  },
+  async (input) => {
+    return `You are an AI assistant that helps autofill missing client information based on available data.
 
-  The client's name is {{{clientName}}}.
+  The client's name is ${input.clientName}.
 
   You are given the following available data about the client:
-  {{availableData}}
+  ${input.availableData}
 
   The following fields need to be autofilled:
-  {{missingFields}}
+  ${input.missingFields}
 
-  Return the autofilled data as a JSON object.  If you cannot fill a particular field, leave it blank in the JSON.  Do not add any conversational text before or after the JSON object.
+  Return the autofilled data as a JSON object. If you cannot fill a particular field, leave it blank in the JSON. Do not add any conversational text before or after the JSON object.
   Ensure that the returned JSON is valid and can be parsed without errors. Include only the requested fields in the JSON. Use your best judgement to provide accurate and complete information.
 
   Here is the JSON:
-  `,
-});
+  `;
+  }
+);
 
-const autofillDataFlow = ai.defineFlow(
+export const autofillDataFlow = defineFlow(
   {
     name: 'autofillDataFlow',
     inputSchema: AutofillDataInputSchema,
     outputSchema: AutofillDataOutputSchema,
   },
-  async input => {
-    const {output} = await prompt(input);
-    return output!;
+  async (input) => {
+    const llmResponse = await autofillDataPrompt.generate({
+      input: input,
+      model: googleAI('gemini-pro'),
+      config: {
+        output: { format: 'json' },
+      },
+    });
+
+    return { autofilledData: llmResponse.output() as string };
   }
 );
